@@ -1,0 +1,110 @@
+1. Create your working folder.
+    I have chosen terraform-vpc
+
+2. Create “vars.tf”
+variable "AWS_REGION" {    
+    default = "eu-west-2"
+}
+
+3. Create “provider.tf”
+
+provider "aws" {
+    region = "${var.AWS_REGION}"
+}
+
+4.Create VPC!
+Create vpc.tf
+
+resource “aws_vpc” “prod-vpc” {
+    cidr_block = “10.0.0.0/16”
+    enable_dns_support = “true” #gives you an internal domain name
+    enable_dns_hostnames = “true” #gives you an internal host name
+    enable_classiclink = “false”
+    instance_tenancy = “default”    
+    
+    tags {
+        Name = “prod-vpc”
+    }
+}
+
+5.Create Public Subnet
+We are still in the vpc.tf
+resource “aws_subnet” “prod-subnet-public-1” {
+    vpc_id = “${aws_vpc.prod-vpc.id}”
+    cidr_block = “10.0.1.0/24”
+    map_public_ip_on_launch = “true” //it makes this a public subnet
+    availability_zone = “eu-west-2a”
+    tags {
+        Name = “prod-subnet-public-1”
+    }
+}
+
+6. Create Internet Gateway
+Create network.tf
+
+resource "aws_internet_gateway" "prod-igw" {
+    vpc_id = "${aws_vpc.prod-vpc.id}"
+    tags {
+        Name = "prod-igw"
+    }
+}
+
+7.Create Custom Route Table
+We are still in the network.tf
+
+resource "aws_route_table" "prod-public-crt" {
+    vpc_id = "${aws_vpc.main-vpc.id}"
+    
+    route {
+        //associated subnet can reach everywhere
+        cidr_block = "0.0.0.0/0" 
+        //CRT uses this IGW to reach internet
+        gateway_id = "${aws_internet_gateway.prod-igw.id}" 
+    }
+    
+    tags {
+        Name = "prod-public-crt"
+    }
+}
+8. Associate CRT and Subnet
+We are still in the network.tf
+
+resource "aws_route_table_association" "prod-crta-public-subnet-1"{
+    subnet_id = "${aws_subnet.prod-subnet-public-1.id}"
+    route_table_id = "${aws_route_table.prod-public-crt.id}"
+}
+
+
+9. Create a Security Group
+resource "aws_security_group" "ssh-allowed" {
+    vpc_id = "${aws_vpc.prod-vpc.id}"
+    
+    egress {
+        from_port = 0
+        to_port = 0
+        protocol = -1
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    ingress {
+        from_port = 22
+        to_port = 22
+        protocol = "tcp"
+        // This means, all ip address are allowed to ssh ! 
+        // Do not do it in the production. 
+        // Put your office or home address in it!
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    //If you do not add this rule, you can not reach the NGIX  
+    ingress {
+        from_port = 80
+        to_port = 80
+        protocol = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    tags {
+        Name = "ssh-allowed"
+    }
+}
+
+
+##https://medium.com/@aliatakan/terraform-create-a-vpc-subnets-and-more-6ef43f0bf4c1
